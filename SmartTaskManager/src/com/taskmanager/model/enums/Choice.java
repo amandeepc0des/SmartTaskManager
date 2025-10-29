@@ -4,5 +4,7 @@ public enum Choice {
     ADDTASK,
     SHOWTASKS,
     DELETETASK,
+    FILTERTASKS,
+    DBCONNECT,
     EXIT
 }

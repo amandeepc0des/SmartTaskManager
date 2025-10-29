@@ -1,7 +1,6 @@
 package com.taskmanager.model;
 import com.taskmanager.model.enums.Category;
 import com.taskmanager.model.enums.TaskStatus;
-
 import java.time.LocalDate;
 public class Task {
     private String title;
@@ -25,6 +24,16 @@ public class Task {
     public String getTitle()
     {
         return this.title;
+    }
+
+    public Category getCategory()
+    {
+        return this.category;
+    }
+
+    public TaskStatus getStatus()
+    {
+        return this.status;
     }
 
     @Override

@@ -6,4 +6,5 @@ public interface ITaskManager {
     public void addTask(Scanner sc);
     public void showTasks();
     public void deleteTask(Scanner sc);
+    public void filterTasks(Scanner sc);
 }

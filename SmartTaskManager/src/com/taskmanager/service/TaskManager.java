@@ -3,9 +3,7 @@ package com.taskmanager.service;
 import com.taskmanager.model.Task;
 import com.taskmanager.model.enums.Category;
 import com.taskmanager.model.enums.TaskStatus;
-
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
 
@@ -78,5 +76,47 @@ public class TaskManager implements ITaskManager{
             System.out.println("Exception Found: " + e.getMessage() + " No task was deleted");
         }
 
+    }
+
+    public void filterTasks(Scanner sc)
+    {
+        System.out.println("Select the below option to filter the task by:");
+        System.out.println("1. Category\n2. Status");
+        int choice = sc.nextInt();
+        switch (choice)
+        {
+            case 1:
+            {
+                System.out.println("Select the Category");
+                for(Category item :  Category.values())
+                {
+                    System.out.println(item.ordinal() + 1 + ". " + item);
+                }
+                choice = sc.nextInt();
+                Category cat = Category.values()[choice - 1];
+                taskDictionary.entrySet().stream()
+                        .filter(entry -> entry.getValue().getCategory() == cat)
+                        .forEach(entry -> System.out.print(entry.getKey() + ": " + entry.getValue()));
+                break;
+            }
+            case 2:
+            {
+                for(TaskStatus item : TaskStatus.values())
+                {
+                    System.out.println(item.ordinal() + 1 + ". " + item);
+                }
+                choice = sc.nextInt();
+                TaskStatus stat = TaskStatus.values()[choice - 1];
+                taskDictionary.entrySet().stream()
+                        .filter(entry -> entry.getValue().getStatus() == stat)
+                        .forEach(entry -> System.out.print(entry.getKey() + ": " + entry.getValue()));
+                break;
+            }
+            default:
+            {
+                System.out.println("You have selected the wrong choice");
+                break;
+            }
+        }
     }
 }

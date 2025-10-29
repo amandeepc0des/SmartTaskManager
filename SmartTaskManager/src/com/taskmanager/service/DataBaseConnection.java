@@ -1,16 +1,16 @@
 package com.taskmanager.service;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 
 public class DataBaseConnection {
-    public Connection makeConnection(String db, String user, String pass)
-    {
-        
-        try (Connection con = DriverManager.getConnection(url, user, password)) {
-            System.out.println("Connected to PostgreSQL successfully!");
-        } catch (SQLException e) {
-            System.err.println("Connection failed: " + e.getMessage());
-        }
+    private static final String URL = "jdbc:postgresql://localhost:5432/SmartTaskManager";
+    private static final String USER = "postgres";
+    private static final String PASSWORD = "12345";
 
+    public Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(URL, USER, PASSWORD);
     }
+
 }
