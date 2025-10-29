@@ -10,7 +10,7 @@ This note explains how Java's `DriverManager` uses polymorphism to select the co
 
 ---
 
-## 1. Define the Common Interface (like `java.sql.Driver`)
+## 1. Define the Common Interface (like `java.sql.Driver`).
 
 ```java
 interface Driver {
