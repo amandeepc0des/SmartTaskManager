@@ -1,523 +1,196 @@
-# JDBC Polymorphism Simulation in Pure Java
+# JDBC Structure and Driver Connection 
 
-This note explains how Java's `DriverManager` uses polymorphism to select the correct JDBC driver, using a pure Java simulation (no real database required). This helps you understand the core JDBC mechanism under the hood.
+Understanding how JDBC connects your Java program to the database through drivers using OOP principles.
 
-## 🎯 Learning Objectives
-- Understand how JDBC uses polymorphism for driver selection
-- Learn the driver registration and discovery mechanism
-- Grasp the Service Provider Interface (SPI) pattern in JDBC
-- Implement a complete JDBC simulation from scratch
+## 🧩 Big Picture (3 layers)
+```
+Your Java Program
+        │
+        ▼
+JDBC API (Interfaces)  ← provided by Java (java.sql package)
+        │
+        ▼
+JDBC Driver (Classes)  ← provided by vendor (e.g., PostgreSQL, MySQL)
+        │
+        ▼
+Database (e.g., PostgreSQL Server)
+```
 
 ---
 
-## 1. Define the Common Interface (like `java.sql.Driver`).
+## ⚙️ Step-by-step OOP Structure
+
+### 1️⃣ JDBC Core Interfaces (provided by Java)
+Think of these as contracts — they define what can be done, not how.
 
 ```java
-interface Driver {
-    boolean acceptsURL(String url);
-    Connection connect(String url);
+// JDBC API (java.sql package)
+public interface Driver {
+    Connection connect(String url, Properties info);
+}
+
+public interface Connection {
+    Statement createStatement();
+}
+
+public interface Statement {
+    ResultSet executeQuery(String sql);
+}
+
+public interface ResultSet {
+    boolean next();
+    String getString(String columnLabel);
 }
 ```
-- **Purpose:** Defines the contract for all database drivers.
-- **Vendors** (PostgreSQL, MySQL, Oracle, etc.) must implement these methods.
 
----
+**🧠 OOP Concept:**
+- These are interfaces, not actual code.
+- Vendors (like PostgreSQL) provide implementations of these interfaces.
 
-## 2. Create Vendor Implementations
-
-Each vendor provides its own driver by implementing the interface differently.
+### 2️⃣ JDBC Driver Classes (provided by the vendor)
+Example: PostgreSQL JDBC Driver (like postgresql-42.x.jar)
 
 ```java
-class PostgreSQLDriver implements Driver {
-    public boolean acceptsURL(String url) {
-        return url.startsWith("jdbc:postgresql:");
-    }
-    public Connection connect(String url) {
-        return new Connection("Connected to PostgreSQL DB!");
+// Vendor-specific implementation
+public class PostgreSQLDriver implements Driver {
+    @Override
+    public Connection connect(String url, Properties info) {
+        return new PostgreSQLConnection(url, info);
     }
 }
 
-class MySQLDriver implements Driver {
-    public boolean acceptsURL(String url) {
-        return url.startsWith("jdbc:mysql:");
+public class PostgreSQLConnection implements Connection {
+    @Override
+    public Statement createStatement() {
+        return new PostgreSQLStatement();
     }
-    public Connection connect(String url) {
-        return new Connection("Connected to MySQL DB!");
+}
+
+public class PostgreSQLStatement implements Statement {
+    @Override
+    public ResultSet executeQuery(String sql) {
+        return new PostgreSQLResultSet();
+    }
+}
+
+public class PostgreSQLResultSet implements ResultSet {
+    @Override
+    public boolean next() {
+        // moves to next row in the result
+        return true;
+    }
+
+    @Override
+    public String getString(String columnLabel) {
+        // returns value from column
+        return "value";
     }
 }
 ```
-- **Each driver** checks if it can handle the given URL and returns a connection if so.
 
----
+**🧠 OOP Concept:**
+- Each class implements a JDBC interface.
+- Your program never directly talks to these classes — it only knows the interfaces.
 
-## 3. Dummy Connection Class
-
-```java
-class Connection {
-    private String message;
-    public Connection(String msg) { this.message = msg; }
-    public void show() { System.out.println(message); }
-}
-```
-- **Purpose:** Placeholder to simulate a real database connection.
-
----
-
-## 4. DriverManager (Java’s Contract Manager)
-
-This class keeps a list of all registered drivers and uses polymorphism to find the right one.
+### 3️⃣ DriverManager — The Connector Between Your Code and Driver
 
 ```java
-import java.util.*;
-
-class DriverManager {
+public class DriverManager {
     private static List<Driver> registeredDrivers = new ArrayList<>();
 
     public static void registerDriver(Driver d) {
         registeredDrivers.add(d);
     }
 
-    public static Connection getConnection(String url) {
+    public static Connection getConnection(String url, String user, String password) {
         for (Driver d : registeredDrivers) {
-            if (d.acceptsURL(url)) { // Polymorphism in action!
-                return d.connect(url);
-            }
+            Connection conn = d.connect(url, new Properties());
+            if (conn != null) return conn;
         }
-        throw new RuntimeException("No suitable driver found!");
+        throw new SQLException("No suitable driver found");
     }
 }
 ```
-- **Polymorphism:** `DriverManager` doesn't care about the specific driver type, just that it implements `Driver`.
+
+**🧠 OOP Concept:**
+- **DriverManager acts as a Factory / Mediator.**
+- **It holds all registered drivers.**
+- **When you ask for a connection, it finds a driver that can handle your DB URL.**
 
 ---
 
-## 5. Simulation (Putting It All Together)
+## 💻 How Your Java Code Uses All This
 
 ```java
 public class Demo {
-    public static void main(String[] args) {
-        // Register vendor drivers
-        DriverManager.registerDriver(new PostgreSQLDriver());
-        DriverManager.registerDriver(new MySQLDriver());
+    public static void main(String[] args) throws Exception {
+        // Step 1: Load driver (registers itself)
+        Class.forName("org.postgresql.Driver"); 
 
-        // Request connection (DriverManager chooses the right driver)
-        Connection c1 = DriverManager.getConnection("jdbc:postgresql://localhost/testdb");
-        c1.show(); // Output: Connected to PostgreSQL DB!
+        // Step 2: Get connection
+        Connection conn = DriverManager.getConnection(
+            "jdbc:postgresql://localhost:5432/testdb", "user", "password"
+        );
 
-        Connection c2 = DriverManager.getConnection("jdbc:mysql://localhost/testdb");
-        c2.show(); // Output: Connected to MySQL DB!
-    }
-}
-```
+        // Step 3: Create statement
+        Statement stmt = conn.createStatement();
 
----
+        // Step 4: Execute query
+        ResultSet rs = stmt.executeQuery("SELECT * FROM employees");
 
-## Key Takeaways
-
-### 🔑 Polymorphism in Action
-- **Runtime Decision:** `DriverManager` doesn't know which specific driver it's using until runtime
-- **Interface Abstraction:** All drivers look the same to `DriverManager` through the `Driver` interface
-- **Flexible Extension:** New database vendors can add drivers without changing existing code
-
-### 🔧 Real JDBC Mechanics
-1. **Driver Loading:** `Class.forName("org.postgresql.Driver")` loads and auto-registers the driver
-2. **Static Initialization:** Driver classes register themselves in static blocks
-3. **Service Discovery:** Modern JDBC uses META-INF/services for automatic driver discovery
-4. **URL Parsing:** Each driver examines the JDBC URL to determine compatibility
-
-### 🚨 Common Issues & Solutions
-
-#### "No suitable driver found" Error
-```java
-// Problem: Driver not in classpath
-// Solution: Add JAR to classpath or use dependency management
-
-// Problem: Wrong URL format
-String wrongUrl = "postgresql://localhost:5432/db"; // Missing jdbc:
-String correctUrl = "jdbc:postgresql://localhost:5432/db"; // Correct
-```
-
-#### Driver Registration Issues
-```java
-// Manual registration (if auto-registration fails)
-DriverManager.registerDriver(new org.postgresql.Driver());
-
-// Check registered drivers
-Enumeration<Driver> drivers = DriverManager.getDrivers();
-while(drivers.hasMoreElements()) {
-    System.out.println(drivers.nextElement().getClass().getName());
-}
-```
-
-### 📊 JDBC Architecture Flow
-```
-Application Code
-       ↓
-   DriverManager
-       ↓
-Driver Interface (Polymorphism Layer)
-       ↓
-Concrete Driver Implementation
-       ↓
-Database Specific Protocol
-       ↓
-    Database
-```
-
-### 🛠️ Enhanced Demo with Error Handling
-
-```java
-public class EnhancedJDBCDemo {
-    public static void main(String[] args) {
-        try {
-            // Register drivers
-            DriverManager.registerDriver(new PostgreSQLDriver());
-            DriverManager.registerDriver(new MySQLDriver());
-            
-            // Test valid connections
-            testConnection("jdbc:postgresql://localhost/testdb");
-            testConnection("jdbc:mysql://localhost/testdb");
-            
-            // Test invalid URL (demonstrates polymorphism failure)
-            testConnection("jdbc:oracle://localhost/testdb");
-            
-        } catch (Exception e) {
-            System.err.println("Demo failed: " + e.getMessage());
-        }
-    }
-    
-    private static void testConnection(String url) {
-        try {
-            Connection conn = DriverManager.getConnection(url);
-            conn.show();
-        } catch (RuntimeException e) {
-            System.err.println("Failed for URL '" + url + "': " + e.getMessage());
+        // Step 5: Read results
+        while (rs.next()) {
+            System.out.println(rs.getString("name"));
         }
     }
 }
 ```
 
-### 🎓 Interview Questions & Answers
+---
 
-**Q: How does DriverManager know which driver to use?**
-A: It iterates through registered drivers and calls `acceptsURL()` on each until one returns true.
-
-**Q: What happens if multiple drivers accept the same URL?**
-A: The first driver that accepts the URL is used (order matters in registration).
-
-**Q: Why use interfaces instead of concrete classes?**
-A: Enables polymorphism, loose coupling, and allows multiple vendors to provide implementations.
-
-**Q: What's the difference between `Class.forName()` and manual registration?**
-A: `Class.forName()` triggers static initialization which auto-registers the driver; manual registration gives explicit control.
-
-### 🔗 Related Concepts
-- **Service Provider Interface (SPI):** JDBC drivers implement the SPI pattern
-- **Factory Pattern:** DriverManager acts as a factory for Connection objects
-- **Strategy Pattern:** Different drivers represent different connection strategies
-- **Dependency Injection:** Modern frameworks inject DataSource instead of using DriverManager
+## 🧭 Diagram (Simplified Flow)
+```
+Your Program
+   │
+   │ uses
+   ▼
+DriverManager (Factory)
+   │
+   │ finds and calls
+   ▼
+PostgreSQLDriver (implements Driver)
+   │
+   │ returns
+   ▼
+PostgreSQLConnection (implements Connection)
+   │
+   │ creates
+   ▼
+PostgreSQLStatement (implements Statement)
+   │
+   │ executes SQL, gets data
+   ▼
+PostgreSQLResultSet (implements ResultSet)
+```
 
 ---
 
-## 📋 JDBC Core Interfaces (Implemented by Vendors)
+## 🧱 Summary (OOP Mapping)
 
-### 🔌 **java.sql.Driver**
-```java
-public interface Driver {
-    Connection connect(String url, Properties info) throws SQLException;
-    boolean acceptsURL(String url) throws SQLException;
-    DriverPropertyInfo[] getPropertyInfo(String url, Properties info) throws SQLException;
-    int getMajorVersion();
-    int getMinorVersion();
-    boolean jdbcCompliant();
-    Logger getParentLogger() throws SQLFeatureNotSupportedException;
-}
-```
-**Purpose:** Main interface that every JDBC driver must implement
-**Vendor Example:** `org.postgresql.Driver`, `com.mysql.cj.jdbc.Driver`
-
-### 🔗 **java.sql.Connection**
-```java
-public interface Connection extends Wrapper, AutoCloseable {
-    Statement createStatement() throws SQLException;
-    PreparedStatement prepareStatement(String sql) throws SQLException;
-    CallableStatement prepareCall(String sql) throws SQLException;
-    
-    void setAutoCommit(boolean autoCommit) throws SQLException;
-    boolean getAutoCommit() throws SQLException;
-    void commit() throws SQLException;
-    void rollback() throws SQLException;
-    
-    void close() throws SQLException;
-    boolean isClosed() throws SQLException;
-    
-    DatabaseMetaData getMetaData() throws SQLException;
-    void setReadOnly(boolean readOnly) throws SQLException;
-    boolean isReadOnly() throws SQLException;
-    
-    void setCatalog(String catalog) throws SQLException;
-    String getCatalog() throws SQLException;
-    
-    void setTransactionIsolation(int level) throws SQLException;
-    int getTransactionIsolation() throws SQLException;
-    
-    Savepoint setSavepoint() throws SQLException;
-    void rollback(Savepoint savepoint) throws SQLException;
-}
-```
-**Purpose:** Represents a session with a specific database
-**Vendor Example:** `org.postgresql.jdbc.PgConnection`, `com.mysql.cj.jdbc.ConnectionImpl`
-
-### 📝 **java.sql.Statement**
-```java
-public interface Statement extends Wrapper, AutoCloseable {
-    ResultSet executeQuery(String sql) throws SQLException;
-    int executeUpdate(String sql) throws SQLException;
-    boolean execute(String sql) throws SQLException;
-    
-    void close() throws SQLException;
-    int getMaxFieldSize() throws SQLException;
-    void setMaxFieldSize(int max) throws SQLException;
-    
-    int getMaxRows() throws SQLException;
-    void setMaxRows(int max) throws SQLException;
-    
-    void setEscapeProcessing(boolean enable) throws SQLException;
-    int getQueryTimeout() throws SQLException;
-    void setQueryTimeout(int seconds) throws SQLException;
-    
-    void cancel() throws SQLException;
-    SQLWarning getWarnings() throws SQLException;
-    void clearWarnings() throws SQLException;
-    
-    void addBatch(String sql) throws SQLException;
-    void clearBatch() throws SQLException;
-    int[] executeBatch() throws SQLException;
-    
-    Connection getConnection() throws SQLException;
-    ResultSet getGeneratedKeys() throws SQLException;
-}
-```
-**Purpose:** Executes SQL statements and returns results
-**Vendor Example:** `org.postgresql.jdbc.PgStatement`, `com.mysql.cj.jdbc.StatementImpl`
-
-### 🎯 **java.sql.PreparedStatement**
-```java
-public interface PreparedStatement extends Statement {
-    ResultSet executeQuery() throws SQLException;
-    int executeUpdate() throws SQLException;
-    
-    void setNull(int parameterIndex, int sqlType) throws SQLException;
-    void setBoolean(int parameterIndex, boolean x) throws SQLException;
-    void setByte(int parameterIndex, byte x) throws SQLException;
-    void setShort(int parameterIndex, short x) throws SQLException;
-    void setInt(int parameterIndex, int x) throws SQLException;
-    void setLong(int parameterIndex, long x) throws SQLException;
-    void setFloat(int parameterIndex, float x) throws SQLException;
-    void setDouble(int parameterIndex, double x) throws SQLException;
-    void setBigDecimal(int parameterIndex, BigDecimal x) throws SQLException;
-    void setString(int parameterIndex, String x) throws SQLException;
-    void setBytes(int parameterIndex, byte[] x) throws SQLException;
-    void setDate(int parameterIndex, Date x) throws SQLException;
-    void setTime(int parameterIndex, Time x) throws SQLException;
-    void setTimestamp(int parameterIndex, Timestamp x) throws SQLException;
-    
-    void clearParameters() throws SQLException;
-    void setObject(int parameterIndex, Object x) throws SQLException;
-    boolean execute() throws SQLException;
-    void addBatch() throws SQLException;
-    
-    ParameterMetaData getParameterMetaData() throws SQLException;
-}
-```
-**Purpose:** Pre-compiled SQL statement with parameter placeholders
-**Vendor Example:** `org.postgresql.jdbc.PgPreparedStatement`, `com.mysql.cj.jdbc.ClientPreparedStatement`
-
-### 📞 **java.sql.CallableStatement**
-```java
-public interface CallableStatement extends PreparedStatement {
-    void registerOutParameter(int parameterIndex, int sqlType) throws SQLException;
-    void registerOutParameter(int parameterIndex, int sqlType, int scale) throws SQLException;
-    void registerOutParameter(int parameterIndex, int sqlType, String typeName) throws SQLException;
-    
-    boolean wasNull() throws SQLException;
-    
-    String getString(int parameterIndex) throws SQLException;
-    boolean getBoolean(int parameterIndex) throws SQLException;
-    byte getByte(int parameterIndex) throws SQLException;
-    short getShort(int parameterIndex) throws SQLException;
-    int getInt(int parameterIndex) throws SQLException;
-    long getLong(int parameterIndex) throws SQLException;
-    float getFloat(int parameterIndex) throws SQLException;
-    double getDouble(int parameterIndex) throws SQLException;
-    BigDecimal getBigDecimal(int parameterIndex) throws SQLException;
-    byte[] getBytes(int parameterIndex) throws SQLException;
-    Date getDate(int parameterIndex) throws SQLException;
-    Time getTime(int parameterIndex) throws SQLException;
-    Timestamp getTimestamp(int parameterIndex) throws SQLException;
-    Object getObject(int parameterIndex) throws SQLException;
-    
-    Array getArray(int parameterIndex) throws SQLException;
-}
-```
-**Purpose:** Used to execute stored procedures with IN, OUT, and INOUT parameters
-**Vendor Example:** `org.postgresql.jdbc.PgCallableStatement`, `com.mysql.cj.jdbc.CallableStatement`
-
-### 📊 **java.sql.ResultSet**
-```java
-public interface ResultSet extends Wrapper, AutoCloseable {
-    boolean next() throws SQLException;
-    boolean previous() throws SQLException;
-    boolean first() throws SQLException;
-    boolean last() throws SQLException;
-    boolean absolute(int row) throws SQLException;
-    boolean relative(int rows) throws SQLException;
-    
-    void close() throws SQLException;
-    boolean wasNull() throws SQLException;
-    
-    String getString(int columnIndex) throws SQLException;
-    String getString(String columnLabel) throws SQLException;
-    boolean getBoolean(int columnIndex) throws SQLException;
-    byte getByte(int columnIndex) throws SQLException;
-    short getShort(int columnIndex) throws SQLException;
-    int getInt(int columnIndex) throws SQLException;
-    long getLong(int columnIndex) throws SQLException;
-    float getFloat(int columnIndex) throws SQLException;
-    double getDouble(int columnIndex) throws SQLException;
-    BigDecimal getBigDecimal(int columnIndex) throws SQLException;
-    byte[] getBytes(int columnIndex) throws SQLException;
-    Date getDate(int columnIndex) throws SQLException;
-    Time getTime(int columnIndex) throws SQLException;
-    Timestamp getTimestamp(int columnIndex) throws SQLException;
-    Object getObject(int columnIndex) throws SQLException;
-    
-    int findColumn(String columnLabel) throws SQLException;
-    ResultSetMetaData getMetaData() throws SQLException;
-    Statement getStatement() throws SQLException;
-    
-    void updateString(int columnIndex, String x) throws SQLException;
-    void updateInt(int columnIndex, int x) throws SQLException;
-    void insertRow() throws SQLException;
-    void updateRow() throws SQLException;
-    void deleteRow() throws SQLException;
-}
-```
-**Purpose:** Represents a table of data resulting from executing a query
-**Vendor Example:** `org.postgresql.jdbc.PgResultSet`, `com.mysql.cj.jdbc.result.ResultSetImpl`
-
-### 🗃️ **javax.sql.DataSource**
-```java
-public interface DataSource extends CommonDataSource, Wrapper {
-    Connection getConnection() throws SQLException;
-    Connection getConnection(String username, String password) throws SQLException;
-}
-```
-**Purpose:** Factory for connections (preferred over DriverManager in production)
-**Vendor Example:** `org.postgresql.ds.PGSimpleDataSource`, `com.mysql.cj.jdbc.MysqlDataSource`
-
-### 🔍 **java.sql.DatabaseMetaData**
-```java
-public interface DatabaseMetaData extends Wrapper {
-    String getURL() throws SQLException;
-    String getUserName() throws SQLException;
-    String getDatabaseProductName() throws SQLException;
-    String getDatabaseProductVersion() throws SQLException;
-    String getDriverName() throws SQLException;
-    String getDriverVersion() throws SQLException;
-    
-    ResultSet getTables(String catalog, String schemaPattern, 
-                       String tableNamePattern, String[] types) throws SQLException;
-    ResultSet getColumns(String catalog, String schemaPattern, 
-                        String tableNamePattern, String columnNamePattern) throws SQLException;
-    ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException;
-    ResultSet getIndexInfo(String catalog, String schema, String table, 
-                          boolean unique, boolean approximate) throws SQLException;
-    
-    boolean supportsTransactions() throws SQLException;
-    boolean supportsStoredProcedures() throws SQLException;
-    int getMaxConnections() throws SQLException;
-    int getMaxStatements() throws SQLException;
-}
-```
-**Purpose:** Provides comprehensive information about the database
-**Vendor Example:** `org.postgresql.jdbc.PgDatabaseMetaData`, `com.mysql.cj.jdbc.DatabaseMetaDataUsingInfoSchema`
-
-### 📏 **java.sql.ResultSetMetaData**
-```java
-public interface ResultSetMetaData extends Wrapper {
-    int getColumnCount() throws SQLException;
-    boolean isAutoIncrement(int column) throws SQLException;
-    boolean isCaseSensitive(int column) throws SQLException;
-    boolean isSearchable(int column) throws SQLException;
-    boolean isCurrency(int column) throws SQLException;
-    int isNullable(int column) throws SQLException;
-    boolean isSigned(int column) throws SQLException;
-    int getColumnDisplaySize(int column) throws SQLException;
-    String getColumnLabel(int column) throws SQLException;
-    String getColumnName(int column) throws SQLException;
-    String getSchemaName(int column) throws SQLException;
-    int getPrecision(int column) throws SQLException;
-    int getScale(int column) throws SQLException;
-    String getTableName(int column) throws SQLException;
-    String getCatalogName(int column) throws SQLException;
-    int getColumnType(int column) throws SQLException;
-    String getColumnTypeName(int column) throws SQLException;
-    boolean isReadOnly(int column) throws SQLException;
-    boolean isWritable(int column) throws SQLException;
-    boolean isDefinitelyWritable(int column) throws SQLException;
-    String getColumnClassName(int column) throws SQLException;
-}
-```
-**Purpose:** Provides information about the columns in a ResultSet
-**Vendor Example:** `org.postgresql.jdbc.PgResultSetMetaData`, `com.mysql.cj.jdbc.result.ResultSetMetaData`
-
-### 🔧 **java.sql.ParameterMetaData**
-```java
-public interface ParameterMetaData extends Wrapper {
-    int getParameterCount() throws SQLException;
-    int isNullable(int param) throws SQLException;
-    boolean isSigned(int param) throws SQLException;
-    int getPrecision(int param) throws SQLException;
-    int getScale(int param) throws SQLException;
-    int getParameterType(int param) throws SQLException;
-    String getParameterTypeName(int param) throws SQLException;
-    String getParameterClassName(int param) throws SQLException;
-    int getParameterMode(int param) throws SQLException;
-}
-```
-**Purpose:** Provides information about the parameters of a PreparedStatement
+| OOP Concept | JDBC Element | Description |
+|-------------|--------------|-------------|
+| **Interface** | Connection, Statement, ResultSet, Driver | Define what operations are available |
+| **Implementation Class** | PostgreSQLConnection, etc. | Concrete logic provided by the vendor |
+| **Factory Pattern** | DriverManager | Creates correct connection |
+| **Polymorphism** | Using Connection instead of PostgreSQLConnection | Allows switching DB easily |
+| **Encapsulation** | Database logic hidden inside driver | Your program doesn't care how it works |
 
 ---
 
-## 🎯 **Vendor Implementation Examples**
+## 🔑 Key Takeaways
 
-### PostgreSQL Driver Implementations:
-- `org.postgresql.Driver` implements `java.sql.Driver`
-- `org.postgresql.jdbc.PgConnection` implements `java.sql.Connection`
-- `org.postgresql.jdbc.PgStatement` implements `java.sql.Statement`
-- `org.postgresql.jdbc.PgPreparedStatement` implements `java.sql.PreparedStatement`
-- `org.postgresql.jdbc.PgResultSet` implements `java.sql.ResultSet`
-
-### MySQL Driver Implementations:
-- `com.mysql.cj.jdbc.Driver` implements `java.sql.Driver`
-- `com.mysql.cj.jdbc.ConnectionImpl` implements `java.sql.Connection`
-- `com.mysql.cj.jdbc.StatementImpl` implements `java.sql.Statement`
-- `com.mysql.cj.jdbc.ClientPreparedStatement` implements `java.sql.PreparedStatement`
-- `com.mysql.cj.jdbc.result.ResultSetImpl` implements `java.sql.ResultSet`
-
-### Oracle Driver Implementations:
-- `oracle.jdbc.OracleDriver` implements `java.sql.Driver`
-- `oracle.jdbc.driver.T4CConnection` implements `java.sql.Connection`
-- `oracle.jdbc.driver.OracleStatement` implements `java.sql.Statement`
-- `oracle.jdbc.driver.OraclePreparedStatement` implements `java.sql.PreparedStatement`
-- `oracle.jdbc.driver.OracleResultSet` implements `java.sql.ResultSet`
-
----
-
-### 💡 Best Practices
-1. **Use DataSource over DriverManager** in production applications
-2. **Handle SQLException properly** with try-catch-finally or try-with-resources
-3. **Use connection pooling** for better performance
-4. **Validate JDBC URLs** before attempting connections
-5. **Log driver registration** for debugging purposes
+1. **Java provides the interfaces** (contracts) in the `java.sql` package
+2. **Database vendors provide the implementations** (actual working code)
+3. **DriverManager acts as a bridge** between your code and the vendor's driver
+4. **Your code only knows about interfaces**, making it database-independent
+5. **Polymorphism allows easy database switching** without changing your code
